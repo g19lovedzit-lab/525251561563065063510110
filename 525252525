@@ -2169,7 +2169,7 @@ local secPlant = farmTab:Section("Plant / Harvest / Sell")
 local plantOpts = { "Best owned" }; for _, n in ipairs(SEED_NAMES) do plantOpts[#plantOpts + 1] = n end
 secPlant:Dropdown("Seed to plant", plantOpts, "Best owned", function(v) S.plantSeed = v end)
 secPlant:Toggle("Auto-Plant (fill plot)", false, function(v) S.autoPlant = v end)
-secPlant:Slider("Plant spacing (studs)", 4, 2, 10, function(v) S.plantSpacing = v end)
+secPlant:Slider("Plant spacing (studs)", 2, 4, 10, function(v) S.plantSpacing = v end)
 secPlant:Toggle("Auto-Harvest ripe fruit", false, function(v) S.autoHarvest = v end)
 secPlant:Slider("Harvest pace (s/fruit · 0.02≈max)", 0.01, 0, 0.2, function(v) S.harvestDelay = v end)
 secPlant:Toggle("Auto-Sell (auto-sells when pack full)", false, function(v) S.autoSell = v end)
