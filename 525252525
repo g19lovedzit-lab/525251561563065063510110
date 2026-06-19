@@ -1853,8 +1853,8 @@ local S = {
     -- seed packs
     autoPack = false, openInterval = 4,
     -- misc
-    autoHop = false, hopInterval = 0,
-    codeText = "", autoCodes = false, antiAfk = true,
+    hopInterval = 0,
+    antiAfk = true,
     -- perf / webhook
     fpsBoost = false,
     webhookEnabled = false, webhookUrl = "", webhookInterval = 300,
@@ -2062,10 +2062,6 @@ loopOn(function() return S.autoPack  end, function() return S.openInterval end, 
 -- // ============================================================ \\ --
 -- //                  MISC (mail / gifts / hop / codes)          \\ --
 -- // ============================================================ \\ --
--- server hop when enabled (RequestHop asks the server to migrate the player)
-loopOn(function() return S.autoHop end, function() return math.max(60, S.hopInterval) end, function()
-    if S.hopInterval > 0 then fire("AntiAfk.RequestHop") end
-end)
 -- Anti-AFK: defeat the idle kick via VirtualUser input on Idled (default on)
 if VirtualUser then
     LocalPlayer.Idled:Connect(function()
@@ -2073,23 +2069,6 @@ if VirtualUser then
         pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new(0, 0)) end)
     end)
 end
--- codes
-local CODE_LIST = {}                  -- add known GAG2 codes here
-local triedCodes = {}
-local function redeemCodes(list)
-    local n = 0
-    for _, code in ipairs(list) do
-        if code ~= "" and not triedCodes[code] then
-            local ok, res = fire("Settings.SubmitCode", code)
-            triedCodes[code] = true
-            if ok and res == true then n += 1; Stats.codes += 1 end
-            task.wait(0.4)
-        end
-    end
-    return n
-end
-loopOn(function() return S.autoCodes end, 120, function() redeemCodes(CODE_LIST) end)
-
 -- // ============================================================ \\ --
 -- //                       PERFORMANCE                           \\ --
 -- // ============================================================ \\ --
@@ -2202,19 +2181,8 @@ local secSeedPacks = miscTab:Section("Seed Packs")
 secSeedPacks:Toggle("Auto-Open Seed Packs", false, function(v) S.autoPack = v end)
 secSeedPacks:Slider("Open interval (s)", 4, 1, 30, function(v) S.openInterval = v end)
 
-local secHop = miscTab:Section("Session")
-secHop:Toggle("Anti-AFK (never idle-kicked)", true, function(v) S.antiAfk = v end)
-secHop:Toggle("Auto server-hop", false, function(v) S.autoHop = v end)
-secHop:Slider("Hop every (min, 0=off)", 0, 0, 120, function(v) S.hopInterval = v * 60 end)
-
-local secCode = miscTab:Section("Codes")
-secCode:Textbox("Redeem a code", "enter code", function(text)
-    if text and text ~= "" then
-        local ok, res = fire("Settings.SubmitCode", text)
-        warn("[Code] " .. ((ok and res == true) and ("Redeemed: " .. text) or ("Invalid: " .. text)))
-    end
-end)
-secCode:Toggle("Auto-redeem code list", false, function(v) S.autoCodes = v end)
+local secAntiAfk = miscTab:Section("Session")
+secAntiAfk:Toggle("Anti-AFK (never idle-kicked)", true, function(v) S.antiAfk = v end)
 
 -- ---- SETTINGS ----
 local secPerf = settingsTab:Section("Performance & Interface")
@@ -2227,9 +2195,7 @@ secWeb:Toggle("Enable reports", false, function(v) S.webhookEnabled = v end)
 secWeb:Slider("Report interval (min)", 5, 1, 60, function(v) S.webhookInterval = v * 60 end)
 secWeb:Button("Send test report", function() task.spawn(function() sendWebhook(true) end) end)
 
-local secInfo = settingsTab:Section("Info")
-secInfo:Label("Grow a Garden 2 · WalkyHub")
-secInfo:Label("Hotkey: Left Ctrl toggles UI")
+
 
 -- Auto-Pot loop (own grown plants flagged via prompt tag is rare; pot all listed plants)
 loopOn(function() return S.autoPot end, 10, function()
