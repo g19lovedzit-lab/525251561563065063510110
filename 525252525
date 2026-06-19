@@ -1727,26 +1727,8 @@ local function seedCatalog()
     end
     return out
 end
-local function gearCatalog()
-    local out, seen = {}, {}
-    local ok, data = pcall(function() return require(ReplicatedStorage.SharedModules.GearShopData) end)
-    if ok and data and type(data.Data) == "table" then
-        for _, e in pairs(data.Data) do
-            if type(e) == "table" and e.ItemName and not e.RobuxOnly then
-                if not seen[e.ItemName] then seen[e.ItemName] = true; out[#out + 1] = e.ItemName end
-            end
-        end
-    end
-    if #out == 0 then  -- fall back to live stock items
-        local ok2, items = pcall(function() return ReplicatedStorage.StockValues.GearShop.Items end)
-        if ok2 and items then for _, c in ipairs(items:GetChildren()) do out[#out + 1] = c.Name end end
-    end
-    table.sort(out)
-    return out
-end
 local CATALOG = seedCatalog()
 local SEED_NAMES = {} ; for _, s in ipairs(CATALOG) do SEED_NAMES[#SEED_NAMES + 1] = s.name end
-local GEAR_NAMES = gearCatalog()
 
 local function stockOf(shop, name)
     local ok, items = pcall(function() return ReplicatedStorage.StockValues[shop].Items end)
@@ -1786,18 +1768,6 @@ local function heldToolByAttr(attr)
     local t = c and c:FindFirstChildWhichIsA("Tool")
     if t and t:GetAttribute(attr) ~= nil then return t end
     return nil
-end
-local function equipByAttr(attr, wantName)
-    local t = heldToolByAttr(attr)
-    if t and ((not wantName) or t:GetAttribute(attr) == wantName) then return t end
-    local tools = toolsByAttr(attr, wantName)
-    if #tools == 0 then return nil end
-    t = tools[1]
-    local hum = humanoid(); if not hum then return nil end
-    local ok = pcall(function() hum:EquipTool(t) end)
-    if not ok then return nil end
-    task.wait(0.22)
-    return heldToolByAttr(attr)
 end
 
 -- PlantArea parts inside MY plot
@@ -1868,78 +1838,6 @@ local function ripeHarvests()       -- own ripe fruit (tag "HarvestPrompt")
     end
     return out
 end
-local function stealable()          -- other players' ripe fruit (tag "StealPrompt")
-    local out = {}
-    for _, pr in ipairs(CollectionService:GetTagged("StealPrompt")) do
-        if pr:IsA("ProximityPrompt") and pr.Enabled and pr:IsDescendantOf(Workspace) then
-            local m = promptCarrier(pr)
-            local pid = m and m:GetAttribute("PlantId")
-            if pid then
-                local pos
-                local pp = pr.Parent
-                if pp and pp:IsA("BasePart") then pos = pp.Position
-                elseif m then local ok, pv = pcall(function() return m:GetPivot().Position end); if ok then pos = pv end end
-                out[#out + 1] = {
-                    owner = tonumber(m:GetAttribute("UserId")) or 0,
-                    plantId = tostring(pid),
-                    fruitId = tostring(m:GetAttribute("FruitId") or ""),
-                    pos = pos,
-                }
-            end
-        end
-    end
-    return out
-end
-local function isNight()
-    local n = ReplicatedStorage:FindFirstChild("Night")
-    return n and n.Value == true
-end
--- world wild pets you walk up to and buy/tame: Map.WildPetRef parts carry PetName/Price/OwnerUserId
-local function wildPets()
-    local out = {}
-    local map = Workspace:FindFirstChild("Map")
-    local ref = map and map:FindFirstChild("WildPetRef")
-    if ref then for _, p in ipairs(ref:GetChildren()) do
-        if p:IsA("BasePart") then
-            out[#out + 1] = {
-                part = p, name = p:GetAttribute("PetName"),
-                price = tonumber(p:GetAttribute("Price")) or 0,
-                owner = tonumber(p:GetAttribute("OwnerUserId")) or 0,
-                pos = p.Position,
-            }
-        end
-    end end
-    return out
-end
--- teleport char to a world position, run fn, restore original CFrame
-local function atPosition(pos, fn)
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-    local saved = hrp.CFrame
-    pcall(function() hrp.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end)
-    task.wait(0.45)
-    local ok = pcall(fn)
-    task.wait(0.15)
-    if hrp and hrp.Parent then pcall(function() hrp.CFrame = saved end) end
-    return ok
-end
--- own-garden anchor: standing inside it sets IsInOwnGarden -> the server banks carried stolen fruit
-local function myBasePos()
-    local plot = myPlot(); if not plot then return nil end
-    for _, tag in ipairs({ "GardenTotalArea", "GardenZone" }) do
-        for _, p in ipairs(CollectionService:GetTagged(tag)) do
-            if p:IsA("BasePart") and p:IsDescendantOf(plot) then
-                return Vector3.new(p.Position.X, p.Position.Y - p.Size.Y / 2 + 5, p.Position.Z)
-            end
-        end
-    end
-    local sp = plot:FindFirstChild("SpawnPoint")
-    if sp and sp:IsA("BasePart") then return sp.Position end
-    local ok, piv = pcall(function() return plot:GetPivot().Position end)
-    return ok and piv or nil
-end
-
 -- // ============================================================ \\ --
 -- //                          STATE                              \\ --
 -- // ============================================================ \\ --
@@ -1952,20 +1850,8 @@ local S = {
     autoHarvest = false, harvestInterval = 2, harvestDelay = 0.01,
     autoSell = false, sellInterval = 15,
     autoExpand = false, autoPot = false, autoDaily = false,
-    -- boosts
-    autoSprinkler = false, sprinklerInterval = 30,
-    autoWater = false, waterInterval = 8,
-    autoSkill = false, skillStats = {},          -- {"BaseSpeed"=true,...}
-    -- pets
-    autoEquipPets = false, autoPetSlot = false,
-    autoBuyPets = false, maxPetPrice = 25000, petTeleport = true, petBuyInterval = 5,
-    sellPets = {}, autoSellPets = false,
     -- eggs / crates / packs
     autoEgg = false, autoCrate = false, autoPack = false, openInterval = 4,
-    -- shop
-    autoGear = false, gearBuy = {}, gearInterval = 10,
-    -- steal
-    autoSteal = false, stealTeleport = true, stealReturnBase = true, stealDelay = 0.05,
     -- misc
     autoMail = false, autoAcceptGift = false, autoHop = false, hopInterval = 0,
     codeText = "", autoCodes = false, antiAfk = true,
@@ -1975,7 +1861,7 @@ local S = {
     killed = false,
 }
 local Stats = { bought = 0, planted = 0, harvested = 0, sold = 0, earned = 0,
-    sprinklers = 0, watered = 0, tamed = 0, opened = 0, stolen = 0, codes = 0, startAt = os.clock() }
+    opened = 0, codes = 0, startAt = os.clock() }
 
 local _due = {}
 local function due(key, period)
@@ -2158,113 +2044,6 @@ task.spawn(function()
 end)
 
 -- // ============================================================ \\ --
--- //                       BOOSTS (passive)                      \\ --
--- // ============================================================ \\ --
--- Auto-Sprinkler: place every owned sprinkler tool, spread across the plot
-loopOn(function() return S.autoSprinkler end, function() return S.sprinklerInterval end, function()
-    local pid = myPlotId(); if not pid then return end
-    local placed = existingPlantPositions()  -- avoid clustering
-    for _, t in ipairs(toolsByAttr("Sprinkler")) do
-        if not S.autoSprinkler then break end
-        local hum = humanoid(); if not hum then break end
-        pcall(function() hum:EquipTool(t) end)
-        task.wait(0.22)
-        t = heldToolByAttr("Sprinkler"); if not t then break end
-        local grid = plantGrid(8)
-        for _, pos in ipairs(grid) do
-            local far = true
-            for _, op in ipairs(placed) do if (pos - op).Magnitude < 12 then far = false; break end end
-            if far then
-                fire("Place.PlaceSprinkler", pos, t:GetAttribute("Sprinkler"), t, pid)
-                Stats.sprinklers += 1; placed[#placed + 1] = pos; task.wait(0.3)
-                break
-            end
-        end
-    end
-    pcall(function() humanoid():UnequipTools() end)
-end)
-
--- Auto-Water: use watering can over planted crops
-loopOn(function() return S.autoWater end, function() return S.waterInterval end, function()
-    local t = equipByAttr("WateringCan"); if not t then return end
-    local name = t:GetAttribute("WateringCan")
-    for _, pos in ipairs(existingPlantPositions()) do
-        if not S.autoWater then break end
-        fire("WateringCan.UseWateringCan", pos - Vector3.new(0, 0.3, 0), name, t)
-        Stats.watered += 1; task.wait(jitter(0.15, 0.3))
-    end
-end)
-
--- Auto-Skill: keep spending skill points into the selected stats
-loopOn(function() return S.autoSkill end, 6, function()
-    if not picked(S.skillStats) then return end
-    for stat in pairs(S.skillStats) do
-        if not S.autoSkill then break end
-        fire("SkillPoints.SpendSkillPoint", stat); task.wait(0.25)
-    end
-end)
-
--- // ============================================================ \\ --
--- //                          PETS                               \\ --
--- // ============================================================ \\ --
-local function ownedPetNames()
-    local names, seen = {}, {}
-    for nm in pairs(invNames("Pets")) do if not seen[nm] then seen[nm] = true; names[#names + 1] = nm end end
-    for _, t in ipairs(toolsByAttr("PetId")) do
-        local nm = t:GetAttribute("PetName") or t.Name
-        if nm and not seen[nm] then seen[nm] = true; names[#names + 1] = nm end
-    end
-    table.sort(names); return names
-end
-local function equippedPetCount()
-    local ok, list = fire("Pets.GetEquippedPets")
-    if ok and type(list) == "table" then
-        local n = 0; for _ in pairs(list) do n += 1 end; return n
-    end
-    return 0
-end
-loopOn(function() return S.autoEquipPets end, 12, function()
-    local cap = tonumber(LocalPlayer:GetAttribute("MaxEquippedPets")) or 3
-    local have = equippedPetCount()
-    if have >= cap then return end
-    for _, nm in ipairs(ownedPetNames()) do
-        if not S.autoEquipPets or have >= cap then break end
-        fire("Pets.RequestEquipByName", nm); have += 1; task.wait(0.3)
-    end
-end)
-loopOn(function() return S.autoPetSlot end, 20, function()
-    fire("Pets.RequestPurchasePetSlot")
-end)
--- Auto-Buy world pets: walk up (teleport) to each affordable unowned wild pet and buy it.
--- Buying == Pets.WildPetTame:Fire(refPart); server charges Price and REQUIRES proximity.
-loopOn(function() return S.autoBuyPets end, function() return S.petBuyInterval end, function()
-    for _, w in ipairs(wildPets()) do
-        if not S.autoBuyPets then break end
-        if w.owner == 0 and w.price > 0 and w.price <= S.maxPetPrice and getSheckles() >= w.price then
-            if S.petTeleport and w.pos then
-                atPosition(w.pos, function() fire("Pets.WildPetTame", w.part) end)
-            else
-                fire("Pets.WildPetTame", w.part)
-            end
-            Stats.tamed += 1
-            task.wait(jitter(0.3, 0.6))
-        end
-    end
-end)
-loopOn(function() return S.autoSellPets end, 4, function()
-    if not picked(S.sellPets) then return end
-    for _, t in ipairs(toolsByAttr("PetId")) do
-        if not S.autoSellPets then break end
-        local nm = t:GetAttribute("PetName") or t.Name
-        if S.sellPets[nm] then
-            local hum = humanoid()
-            if hum then pcall(function() hum:EquipTool(t) end); task.wait(0.25) end
-            fire("NPCS.SellPet", t:GetAttribute("PetId")); task.wait(0.3)
-        end
-    end
-end)
-
--- // ============================================================ \\ --
 -- //                  EGGS / CRATES / SEED PACKS                 \\ --
 -- // ============================================================ \\ --
 local function openAll(category, path)
@@ -2281,52 +2060,6 @@ end
 loopOn(function() return S.autoEgg  end, function() return S.openInterval end, function() openAll("Eggs", "Egg.OpenEgg") end)
 loopOn(function() return S.autoCrate end, function() return S.openInterval end, function() openAll("Crates", "Crate.OpenCrate") end)
 loopOn(function() return S.autoPack  end, function() return S.openInterval end, function() openAll("SeedPacks", "SeedPack.OpenSeedPack") end)
-
--- // ============================================================ \\ --
--- //                      SHOP (gear)                            \\ --
--- // ============================================================ \\ --
-loopOn(function() return S.autoGear end, function() return S.gearInterval end, function()
-    if not picked(S.gearBuy) then return end
-    for name in pairs(S.gearBuy) do
-        if not S.autoGear then break end
-        local stock = stockOf("GearShop", name)
-        if stock == nil or stock > 0 then
-            fire("GearShop.PurchaseGear", name); task.wait(jitter(0.2, 0.4))
-        end
-    end
-end)
-
--- // ============================================================ \\ --
--- //                     STEAL (PvP, night)                      \\ --
--- // ============================================================ \\ --
--- Instant steal: for HoldDuration==0 prompts the game fires BeginSteal+CompleteSteal
--- back-to-back (no hold). Server-side steal is proximity-gated like the prompt, so
--- teleport to the fruit unless disabled.
-local function hrpNow() local c = LocalPlayer.Character; return c and c:FindFirstChild("HumanoidRootPart") end
-loopOn(function() return S.autoSteal end, 1.5, function()
-    if not isNight() then return end
-    for _, f in ipairs(stealable()) do
-        if not (S.autoSteal and isNight()) then break end
-        -- 1) go to the fruit (proximity is server-gated) and steal it
-        if S.stealTeleport and f.pos then
-            local hrp = hrpNow(); if hrp then pcall(function() hrp.CFrame = CFrame.new(f.pos + Vector3.new(0, 4, 0)) end); task.wait(0.4) end
-        end
-        fire("Steal.BeginSteal", f.owner, f.plantId, f.fruitId)
-        fire("Steal.CompleteSteal")
-        Stats.stolen += 1
-        -- 2) carry it home: standing in own garden zone banks it (CarryingStolenFruit clears)
-        if S.stealReturnBase then
-            local base = myBasePos()
-            local hrp = hrpNow()
-            if base and hrp then
-                pcall(function() hrp.CFrame = CFrame.new(base + Vector3.new(0, 4, 0)) end)
-                local t0 = os.clock()
-                while LocalPlayer:GetAttribute("CarryingStolenFruit") and os.clock() - t0 < 3 and S.autoSteal do task.wait(0.15) end
-            end
-        end
-        if (S.stealDelay or 0) > 0 then task.wait(S.stealDelay) end
-    end
-end)
 
 -- // ============================================================ \\ --
 -- //                  MISC (mail / gifts / hop / codes)          \\ --
@@ -2428,8 +2161,7 @@ local function sendWebhook(isTest)
             { name = "🌾 Plot",     value = tostring((myPlot() and myPlot().Name) or "?"), inline = true },
             { name = "📊 Session",  value = string.format("bought %d · planted %d · harvested %d · sold %d (+%s)",
                 Stats.bought, Stats.planted, Stats.harvested, Stats.sold, fmt(Stats.earned)), inline = false },
-            { name = "✨ Extras",   value = string.format("sprinklers %d · watered %d · tamed %d · opened %d · stolen %d",
-                Stats.sprinklers, Stats.watered, Stats.tamed, Stats.opened, Stats.stolen), inline = false },
+            { name = "✨ Extras",   value = string.format("opened %d", Stats.opened), inline = false },
             { name = "⏱️ Uptime",   value = hms(os.clock() - Stats.startAt), inline = true },
         }, footer = { text = "WalkyHub · GAG2" },
     } } }
@@ -2459,11 +2191,7 @@ local ui = KrassUI.new({
 })
 
 local farmTab = ui:Tab("Farm")
-local boostsTab = ui:Tab("Boosts")
-local petsTab = ui:Tab("Pets")
 local openTab = ui:Tab("Eggs & Crates")
-local shopTab = ui:Tab("Shop")
-local stealTab = ui:Tab("Steal")
 local miscTab = ui:Tab("Misc")
 local settingsTab = ui:Tab("Settings")
 
@@ -2495,30 +2223,6 @@ secPlant:Toggle("Auto-Sell (auto-sells when pack full)", false, function(v) S.au
 secPlant:Slider("Sell interval (s, sell-only mode)", 15, 3, 120, function(v) S.sellInterval = v end)
 secPlant:Toggle("Auto-Pot grown plants", false, function(v) S.autoPot = v end)
 
--- ---- BOOSTS ----
-local secSpr = boostsTab:Section("Sprinklers & Water")
-secSpr:Toggle("Auto-place Sprinklers", false, function(v) S.autoSprinkler = v end)
-secSpr:Slider("Sprinkler interval (s)", 30, 10, 120, function(v) S.sprinklerInterval = v end)
-secSpr:Toggle("Auto-Watering Can", false, function(v) S.autoWater = v end)
-secSpr:Slider("Water interval (s)", 8, 2, 60, function(v) S.waterInterval = v end)
-
-local secSkill = boostsTab:Section("Skill points")
-secSkill:Dropdown("Stats to level", { "BaseSpeed", "BaseJump", "ShovelPower", "MaxBackpack" }, {}, function(sel) pickMulti(sel, S.skillStats) end)
-secSkill:Toggle("Auto-Spend skill points", false, function(v) S.autoSkill = v end)
-
--- ---- PETS ----
-local secPet = petsTab:Section("Pets")
-secPet:Toggle("Auto-Equip pets (to slot cap)", false, function(v) S.autoEquipPets = v end)
-secPet:Toggle("Auto-Buy pet slots", false, function(v) S.autoPetSlot = v end)
-secPet:Toggle("Auto-Buy world pets (walk up & buy)", false, function(v) S.autoBuyPets = v end)
-secPet:Slider("Max pet price (Sheckles)", 25000, 1000, 1000000, function(v) S.maxPetPrice = v end)
-secPet:Toggle("Teleport to pet (needed to buy)", true, function(v) S.petTeleport = v end)
-secPet:Slider("Pet buy interval (s)", 5, 2, 60, function(v) S.petBuyInterval = v end)
-
-local secPetSell = petsTab:Section("Sell pets")
-secPetSell:Dropdown("Pets to sell", ownedPetNames(), {}, function(sel) pickMulti(sel, S.sellPets) end)
-secPetSell:Toggle("Auto-Sell selected pets", false, function(v) S.autoSellPets = v end)
-
 -- ---- EGGS & CRATES ----
 local secOpen = openTab:Section("Auto-Open")
 secOpen:Toggle("Auto-Open Eggs", false, function(v) S.autoEgg = v end)
@@ -2528,22 +2232,6 @@ secOpen:Slider("Open interval (s)", 4, 1, 30, function(v) S.openInterval = v end
 local secOpenInfo = openTab:Section("Info")
 secOpenInfo:Label("Opens everything you own in each")
 secOpenInfo:Label("category. Confirm is automatic.")
-
--- ---- SHOP ----
-local secShop = shopTab:Section("Gear shop")
-secShop:Dropdown("Gear to buy", GEAR_NAMES, {}, function(sel) pickMulti(sel, S.gearBuy) end)
-secShop:Toggle("Auto-Buy selected gear", false, function(v) S.autoGear = v end)
-secShop:Slider("Gear buy interval (s)", 10, 2, 60, function(v) S.gearInterval = v end)
-
--- ---- STEAL ----
-local secSteal = stealTab:Section("Auto-Steal (night only)")
-secSteal:Toggle("Auto-Steal others' ripe fruit", false, function(v) S.autoSteal = v end)
-secSteal:Toggle("Teleport to fruit (needed to steal)", true, function(v) S.stealTeleport = v end)
-secSteal:Toggle("Return to base after each fruit (banks it)", true, function(v) S.stealReturnBase = v end)
-secSteal:Slider("Steal speed (delay/fruit, 0=instant)", 0.05, 0, 1, function(v) S.stealDelay = v end)
-local secStealInfo = stealTab:Section("Info")
-secStealInfo:Label("Night-only · TP to fruit, steal,")
-secStealInfo:Label("then TP home to bank each one.")
 
 -- ---- MISC ----
 local secMail = miscTab:Section("Mail & Gifts")
@@ -2605,13 +2293,12 @@ end)
 pcall(function()
     if getgenv then getgenv().WalkyGAG2 = {
         S = S, Stats = Stats, Net = Net, fire = fire, action = action,
-        catalog = CATALOG, gearNames = GEAR_NAMES, myPlot = myPlot, replica = replica,
-        ripeHarvests = ripeHarvests, stealable = stealable, wildPets = wildPets,
-        toolsByAttr = toolsByAttr, plantGrid = plantGrid, ownedPetNames = ownedPetNames, myBasePos = myBasePos,
+        catalog = CATALOG, myPlot = myPlot, replica = replica,
+        ripeHarvests = ripeHarvests, toolsByAttr = toolsByAttr, plantGrid = plantGrid,
         stepHarvest = stepHarvest, fireFast = fireFast, fruitCount = fruitCount, sellAllNow = sellAllNow, maxFruitCap = maxFruitCap,
         unload = function() S.killed = true; pcall(function() ui:Destroy() end) end,
     } end
 end)
 
-warn("[WalkyHub] GAG2 full-auto loaded · " .. #SEED_NAMES .. " seeds · " .. #GEAR_NAMES .. " gear")
+warn("[WalkyHub] GAG2 full-auto loaded · " .. #SEED_NAMES .. " seeds")
 print("[WalkyHub] Grow a Garden 2 full-auto loaded.")
