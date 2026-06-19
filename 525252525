@@ -1853,7 +1853,7 @@ local S = {
     -- seed packs
     autoPack = false, openInterval = 4,
     -- misc
-    autoMail = false, autoAcceptGift = false, autoHop = false, hopInterval = 0,
+    autoHop = false, hopInterval = 0,
     codeText = "", autoCodes = false, antiAfk = true,
     -- perf / webhook
     fpsBoost = false,
@@ -2062,29 +2062,6 @@ loopOn(function() return S.autoPack  end, function() return S.openInterval end, 
 -- // ============================================================ \\ --
 -- //                  MISC (mail / gifts / hop / codes)          \\ --
 -- // ============================================================ \\ --
-loopOn(function() return S.autoMail end, 30, function()
-    local ok, box = fire("Mailbox.OpenInbox")
-    if ok and type(box) == "table" then
-        local mb = box.Mailbox or box.Inbox or box
-        for id, entry in pairs(mb) do
-            if not S.autoMail then break end
-            if type(entry) == "table" and (entry.Claimed == true or entry.IsClaimed == true) then
-                -- skip already claimed
-            else
-                fire("Mailbox.Claim", id); task.wait(0.3)
-            end
-        end
-    end
-end)
--- accept incoming gifts automatically
-pcall(function()
-    local g = action("Gifting.Prompted")
-    if g and g.OnClientEvent then
-        g.OnClientEvent:Connect(function(fromPlayer)
-            if S.autoAcceptGift and fromPlayer then pcall(function() fire("Gifting.Response", fromPlayer, true) end) end
-        end)
-    end
-end)
 -- server hop when enabled (RequestHop asks the server to migrate the player)
 loopOn(function() return S.autoHop end, function() return math.max(60, S.hopInterval) end, function()
     if S.hopInterval > 0 then fire("AntiAfk.RequestHop") end
@@ -2224,10 +2201,6 @@ secPlant:Toggle("Auto-Pot grown plants", false, function(v) S.autoPot = v end)
 local secSeedPacks = miscTab:Section("Seed Packs")
 secSeedPacks:Toggle("Auto-Open Seed Packs", false, function(v) S.autoPack = v end)
 secSeedPacks:Slider("Open interval (s)", 4, 1, 30, function(v) S.openInterval = v end)
-
-local secMail = miscTab:Section("Mail & Gifts")
-secMail:Toggle("Auto-Claim mailbox", false, function(v) S.autoMail = v end)
-secMail:Toggle("Auto-Accept gifts", false, function(v) S.autoAcceptGift = v end)
 
 local secHop = miscTab:Section("Session")
 secHop:Toggle("Anti-AFK (never idle-kicked)", true, function(v) S.antiAfk = v end)
